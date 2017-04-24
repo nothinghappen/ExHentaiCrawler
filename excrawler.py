@@ -1,8 +1,17 @@
 import requests
 from bs4 import BeautifulSoup
 from random import randint
-from config import COOKIE,USER_AGENTS,URL,API_URL
+from config.conf import COOKIE,USER_AGENTS,URL,API_URL
 import json
+from api import getDataFromApi
+
+#从url字符串中解析出gallery_id与gallery_token
+def getIdAndTokenFromURL(url):
+    begin = len("https://exhentai.org/g/")
+    end = len(url)
+    param = url[begin:end].split('/')
+    return ({'gallery_id':param[0],'gallery_token':param[1]})
+
 
 n = randint(0,len(USER_AGENTS)-1)
 headers = {'Accept': 'text/html, application/xhtml+xml, image/jxr, */*',
@@ -14,26 +23,7 @@ headers = {'Accept': 'text/html, application/xhtml+xml, image/jxr, */*',
 
 
 r = requests.get(URL,cookies = COOKIE,headers = headers)
-
 soup = BeautifulSoup(r.text,"html.parser")
-
-def getIdAndTokenFromURL(url):
-    begin = len("https://exhentai.org/g/")
-    end = len(url)
-    param = url[begin:end].split('/')
-    return ({'gallery_id':param[0],'gallery_token':param[1]})
-
-def getDataFromApi(gidlist):
-    requestBody = {
-        'method': 'gdata',
-        'gidlist': [],
-        'namespace': 1
-    }
-    requestBody['gidlist'] = gidlist
-    jsonRequestBody = json.dumps(requestBody)
-    r = requests.post(API_URL,data=jsonRequestBody)
-    print(r.text)
-
 
 #获取每个本子链接的url
 tags = soup.select(".it5 > a")
@@ -45,7 +35,10 @@ for tag in tags :
     dic = getIdAndTokenFromURL(href)
     gidlist.append([int(dic['gallery_id']),dic['gallery_token']])
 
-getDataFromApi(gidlist)
+res = getDataFromApi(gidlist)
+gmetadata = res['gmetadata']
+for data in gmetadata:
+    print(data['title'])
 
 
-    
+

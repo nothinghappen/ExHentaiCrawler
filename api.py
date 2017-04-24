@@ -1,10 +1,15 @@
 import requests
+import json
+from config.conf import API_URL
 
-requestBody = {
-  'method': 'gdata',
-  "gidlist": [],
-  'namespace': 1
-}
-
-def getDataFromApi():
-    
+#从api获取本子信息
+def getDataFromApi(gidlist):
+    requestBody = {
+        'method': 'gdata',
+        'gidlist': [],
+        'namespace': 1
+    }
+    requestBody['gidlist'] = gidlist
+    jsonRequestBody = json.dumps(requestBody)
+    r = requests.post(API_URL,data=jsonRequestBody)
+    return json.loads(r.text)
