@@ -44,6 +44,39 @@ def getListByPage(page):
     
     return gidlist
 
+#获取指定链接的本子所有图片url
+def getImages(url):
+    n = randint(0,len(USER_AGENTS)-1)
+    headers = {'Accept': 'text/html, application/xhtml+xml, image/jxr, */*',
+                 'Accept-Encoding': 'gzip, deflate',
+                 'Accept-Language': 'zh-Hans-CN, zh-Hans; q=0.7, ja; q=0.3',
+                 'Connection': 'Keep-Alive',
+                 'Host': 'exhentai.org',
+                 'User-Agent': USER_AGENTS[n]}
+
+    res = requests.get(url,cookies = COOKIE,headers = headers)
+    print(res.text)
+    soup = BeautifulSoup(res.text,"html.parser")
+    tag = soup.select("#gdt > .gdtm > div > a")
+    firstHref = tag[0]['href']
+    re = requests.get(firstHref,cookies = COOKIE,headers = headers)
+    s = BeautifulSoup(re.text,"html.parser")
+    lastHref = ""
+    while True:
+        nxtHref = s.select("#i3 > a")[0]['href']
+        imgUrl = s.select("#img")[0]['src']
+        print(imgUrl)
+        print(nxtHref)
+        if nxtHref == lastHref:
+            break
+        lastHref = nxtHref
+        re = requests.get(nxtHref,cookies = COOKIE,headers = headers)
+        s = BeautifulSoup(re.text,"html.parser")
+        time.sleep(2)
+
+
+
+
 if __name__ == "__main__":
     #缓存最新插入的100条记录，用于去重
     ca = cache(100)
