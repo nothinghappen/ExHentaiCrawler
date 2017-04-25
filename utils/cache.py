@@ -24,6 +24,12 @@ class cache:
     def clear(self):
         self.dic.clear()
         self.deque.clear()
+
+    def containKey(self,key):
+        if key not in self.dic:
+            return False
+        else:
+            return True
         
 
 

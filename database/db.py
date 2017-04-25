@@ -16,12 +16,22 @@ def getConnection():
                             charset = charset,
                             cursorclass=pymysql.cursors.DictCursor)
 
-def insert():
-    con = getConnection()
+def insert(gmetadata,con):
+    with con.cursor() as cursor:
+        sql = "insert into eromanga (gid,token,archiver_key,title,title_jpn,category,thumb,uploader,posted,filecount,filesize,expunged,rating,torrentcount,tags) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+        for data in gmetadata:
+            cursor.execute(sql,(data['gid'],data['token'],data['archiver_key'],data['title'],data['title_jpn'],data['category'],data['thumb'],data['uploader'],int(data['posted']),int(data['filecount']),int(data['filesize']),data['expunged'],data['rating'],int(data['torrentcount']),str(data['tags'])))
+    con.commit()
+
+def select():
     try:
+        con = getConnection()
         with con.cursor() as cursor:
-            sql = "insert into user (name,age) values (%s,%s)"
-            cursor.execute(sql,('wangjin',12))
-        con.commit()
+            sql = "select * from eromanga"
+            cursor.execute(sql)
+            res = cursor.fetchall()
+            for r in res:
+                print(r)
     finally:
         con.close()
+    

@@ -4,6 +4,9 @@ from random import randint
 from config.conf import COOKIE,USER_AGENTS,URL,API_URL
 import json
 from api import getDataFromApi
+from database.db import insert,getConnection
+from utils.cache import cache
+import time
 
 #从url字符串中解析出gallery_id与gallery_token
 def getIdAndTokenFromURL(url):
@@ -42,11 +45,31 @@ def getListByPage(page):
     return gidlist
 
 if __name__ == "__main__":
-    gidlist = getListByPage(1)
-    res = getDataFromApi(gidlist)
-    gmetadata = res['gmetadata']
-    for data in gmetadata:
-        print(data['title'])
+    #缓存最新插入的100条记录，用于去重
+    ca = cache(100)
+    for index in range(10):
+        print("爬取第"+str(index)+"页开始")
+        gidlist = getListByPage(index)
+        print("获取本子列表")
+        res = getDataFromApi(gidlist)
+        print("获取本子详细信息")
+        gmetadata = res['gmetadata']
+        for data in gmetadata:
+            key = "%s-%s" % (data['gid'],data['token'])
+            if ca.containKey(key):
+                print("delete")
+                gmetadata.remove(data)
+            else:
+                ca.put(key,None)
+
+        connection = getConnection()
+        try:
+            insert(gmetadata,connection)
+        finally:
+            connection.close()
+        print("爬取第"+str(index)+"页结束")
+        time.sleep(3)
+        
 
 
 

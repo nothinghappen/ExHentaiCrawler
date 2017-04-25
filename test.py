@@ -1,18 +1,11 @@
-from utils.cache import cache
 
-c = cache(2)
-c.put("haha","heheheheheh")
-c.put("h","heheheheheh")
-c.put("hhehe","heheheheheh")
-c.put("123","heheheheheh")
-c.put("321","heheheheheh")
-c.put("hhe22123123he","heheheheheh")
+li = ["1","2","3","4"]
 
-
-
-print(c.get("h"))
-print(c.get("hhehe"))
-print(c.get("haha"))
+for s in li:
+    if s == "2":
+        li.remove(s)
+    
+print(li)
 
 
 
