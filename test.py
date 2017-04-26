@@ -1,6 +1,7 @@
-from excrawler import getImages
+from excrawler import Crawler
 
-getImages("https://exhentai.org/g/1055274/caef1209f0/")
+crawler = Crawler()
 
+crawler.getImages("https://exhentai.org/g/1055505/b28593e0d3/")
 
 

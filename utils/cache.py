@@ -2,7 +2,7 @@ import collections
 
 class cache:
     maxSize = 0
-    deque = collections.deque();
+    deque = collections.deque()
     dic = {}
 
     def __init__(self,maxSize = 100):

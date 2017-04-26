@@ -10,6 +10,5 @@ def getDataFromApi(gidlist):
         'namespace': 1
     }
     requestBody['gidlist'] = gidlist
-    jsonRequestBody = json.dumps(requestBody)
-    r = requests.post(API_URL,data=jsonRequestBody)
+    r = requests.post(API_URL,json=requestBody)
     return json.loads(r.text)

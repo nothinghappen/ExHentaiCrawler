@@ -45,4 +45,8 @@ URL = "https://exhentai.org"
 
 API_URL = "https://api.e-hentai.org/api.php"
 
+APP_ID = 1
+
+LOG_URL = "http://120.77.223.123:8080/LogService/log"
+
 
