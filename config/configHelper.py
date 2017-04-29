@@ -10,7 +10,7 @@ def getConfigInt(sec,key):
     return cf.getint(sec,key)
 
 def setConfig(sec,key,val):
-    with open("app.conf","w") as conf:
+    with open("config/app.conf","w") as conf:
         cf.set(sec,key,val)
         cf.write(conf)
 

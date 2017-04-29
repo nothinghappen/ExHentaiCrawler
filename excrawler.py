@@ -1,161 +1,197 @@
 import requests
 from bs4 import BeautifulSoup
 from random import randint
-from config.conf import COOKIE,USER_AGENTS,URL,API_URL
+from config.conf import COOKIE, USER_AGENTS, URL, API_URL
 import json
-from database.db import insert,getConnection
+from database.db import db
 from utils.cache import cache
 import time
-from utils.log import error,info
+from utils.log import error, info
+from exception.error import Networkerror,ParseError
+import re
+from config.configHelper import setConfig,getConfig,getConfigInt
+
 
 def getRandomHead():
-    n = randint(0,len(USER_AGENTS)-1)
+    n = randint(0, len(USER_AGENTS) - 1)
     headers = {'Accept': 'text/html, application/xhtml+xml, image/jxr, */*',
-                 'Accept-Encoding': 'gzip, deflate',
-                 'Accept-Language': 'zh-Hans-CN, zh-Hans; q=0.7, ja; q=0.3',
-                 'Connection': 'Keep-Alive',
-                 'Host': 'exhentai.org',
-                 'User-Agent': USER_AGENTS[n]}
+               'Accept-Encoding': 'gzip, deflate',
+               'Accept-Language': 'zh-Hans-CN, zh-Hans; q=0.7, ja; q=0.3',
+               'Connection': 'Keep-Alive',
+               'Host': 'exhentai.org',
+               'User-Agent': USER_AGENTS[n]}
     return headers
 
-#从url字符串中解析出gallery_id与gallery_token
+# 从url字符串中解析出gallery_id与gallery_token
 def getIdAndTokenFromURL(url):
     begin = len("https://exhentai.org/g/")
     end = len(url)
     param = url[begin:end].split('/')
-    return ({'gallery_id':param[0],'gallery_token':param[1]})
+    return ({'gallery_id': param[0], 'gallery_token': param[1]})
 
-#封装请求重试与异常处理，记录日志的代码
-def invokeRequest(log,location,func,*args, **kwargs):
+# 封装请求重试与异常处理，记录日志的代码
+def invokeRequest(log, location, func, *args, **kwargs):
     errorCount = 0
-    #发生异常时最多重试3次
+    # 发生异常时最多重试5次
     while True:
-        if errorCount >= 3:
-            print(log+"时重试3次失败")
-            exit()
+        if errorCount >= 5:
+            raise Networkerror(log + "时重试5次失败")
         try:
             return func(*args, **kwargs)
-            break
         except requests.exceptions.Timeout:
-            print(log+"时网络超时")
-            error("异常",location,log+"时网络超时")
+            error("异常", location, log + "时网络超时")
             errorCount += 1
         except requests.exceptions.ConnectionError:
-            print(log+"时发生网络异常")
-            error("异常",location,log+"时发生网络异常")
+            error("异常", location, log + "时发生网络异常")
             errorCount += 1
-        except :
-            print(log+"时发生未知异常")
-            error("异常",location,log+"时发生未知异常")
+        except:
+            error("异常", location, log + "时发生未知异常")
             errorCount += 1
+
+#判断当前网页是不是最后一页
+def isLastPage(html):
+    if "No hits found" in html:
+        return True
+    else:
+        return False
 
 class Crawler:
 
-    #正在爬取的本子当前token
-    currentToke = ""
-    #正在爬取的本子当前gid
-    currentGid = 0
-    #正在爬取的本子列表当前页码
+    db = db()
+
+    # 正在爬取的本子列表当前页码
     currentPage = 0
 
-    #得到指定页码的本子列表(页码从0开始)
-    def getListByPage(self,page):
+    # 得到指定页码的本子列表(页码从0开始)
+    def getListByPage(self, page):
         url = URL
         if page != 0:
             url = url + "?page=" + str(page)
         headers = getRandomHead()
-        r = invokeRequest("获取第"+str(page)+"页本子列表","excrawler.getListByPage",requests.get,url,cookies = COOKIE,headers = headers,timeout=30)
-        soup = BeautifulSoup(r.text,"html.parser")
-
-        #获取每个本子链接的url
-        tags = soup.select(".it5 > a")
         gidlist = []
-        for tag in tags :
-            href = tag['href']
-            #url格式 https://e-hentai.org/g/{gallery_id}/{gallery_token}/
-            #从中拿到gallery_id 与 gallery_token然后去调api获取本子详细信息
-            dic = getIdAndTokenFromURL(href)
-            gidlist.append([int(dic['gallery_id']),dic['gallery_token']])
-        
+        errorCount = 0
+        while True:
+            if errorCount >= 5:
+                raise ParseError("获取第" + str(page) + "页本子列表时连续5次未能从html中解析出本子列表")
+
+            r = invokeRequest("获取第" + str(page) + "页本子列表", "excrawler.getListByPage",
+                            requests.get, url, cookies=COOKIE, headers=headers, timeout=30)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # 获取每个本子链接的url
+            tags = soup.select(".it5 > a")
+            if len(tags) == 0:
+                info("info","excrawler.getListByPage","获取第" + str(page) + "页本子列表时未解析出本子列表,html:" + r.text)
+                #判断是不是已经到了最后一页
+                if isLastPage(r.text):
+                    info("info","excrawler.getListByPage","已经爬取到了最后一页")
+                    break
+                else:
+                    errorCount += 1
+                    continue
+            for tag in tags:
+                href = tag['href']
+                # url格式 https://e-hentai.org/g/{gallery_id}/{gallery_token}/
+                # 从中拿到gallery_id 与 gallery_token然后去调api获取本子详细信息
+                dic = getIdAndTokenFromURL(href)
+                gidlist.append([int(dic['gallery_id']), dic['gallery_token']])
+            break
+
         return gidlist
 
-    def getDataFromApi(self,gidlist):
+    def getDataFromApi(self, gidlist):
         requestBody = {
             'method': 'gdata',
             'gidlist': [],
             'namespace': 1
         }
         requestBody['gidlist'] = gidlist
-        r = invokeRequest("调用api时","excrawler.getDataFromApi",requests.post,API_URL,json=requestBody,timeout=30)
+        r = invokeRequest("调用api", "excrawler.getDataFromApi",
+                          requests.post, API_URL, json=requestBody, timeout=30)
         return json.loads(r.text)
 
-    #获取指定链接的本子所有图片url
-    def getImages(self,url):
+    # 获取指定链接的本子所有缩略图url及图片详情页url
+    def getImages(self, base_url,gid, token,imageCount):
         headers = getRandomHead()
-        res = invokeRequest("获取本子详情页时","excrawler.getImages",requests.get,url,cookies = COOKIE,headers = headers)
-        soup = BeautifulSoup(res.text,"html.parser")
-        print(res.text)
-        tag = soup.select("#gdt > .gdtm > div > a")
-        if len(tag) == 0:
-            print("本子详情页缩略图列表中没有图片,url:"+url)
-            info("信息","excrawler.getImages","本子详情页缩略图列表中没有图片,url:"+url)
-            return
-        currentHref = tag[0]['href']
-        re = invokeRequest("获取本子图片url时","excrawler.getImages",requests.get,currentHref,cookies = COOKIE,headers = headers)
-        s = BeautifulSoup(re.text,"html.parser")
+        pageCount = int(imageCount/40) + 1
+        imageUrls = []
+        tsequence = 0
+        sequence = 0
+        for i in range(pageCount):
+            info("info","excrawler.getImages","开始爬取本子详情页第" + str(i + 1) + "页,gid:" + str(gid) + " token:" + token)
+            if i != 0:
+                url = base_url + "?p=" + str(i)
+            else:
+                url = base_url
+            res = invokeRequest("获取本子详情页第" + str(i+1) + "页", "excrawler.getImages",
+                            requests.get, url, cookies=COOKIE, headers=headers)
+            soup = BeautifulSoup(res.text, "html.parser")
+            tags = soup.select("#gdt > .gdtm > div")
+            if len(tags) == 0:
+                info("信息", "excrawler.getImages", "本子详情页缩略图列表中没有图片,url:" + url)
+                return
+            images = []
+            for tag in tags:
+                timageUrl = re.findall(r"url\((.+)\)",tag['style'])[0]
+                a = tag.select("a")[0]
+                href = a['href']
+                img = {'gid':gid,'token':token,'sequence':sequence,'url':href}
+                images.append(img)
+                sequence += 1
+                if timageUrl not in imageUrls:
+                    timg = {'gid':gid,'token':token,'sequence':tsequence,'url':timageUrl}
+                    self.db.insertThumbimage(timg)
+                    tsequence += 1
+                    imageUrls.append(timageUrl)
+            self.db.insertEroimage(images)
+
+    
+    def crawl(self):
+        lastPage = getConfigInt("app","lastpage")
+        try:
+            self.doCrawl(lastPage)
+        except Networkerror as e:
+            error("异常","excrawler.crawl","Networkerror:" + e.message)
+        except ParseError as e:
+            error("异常","excrawler.crawl","ParseError:" + e.message)
+        except Exception as e:
+            error("异常","excrawler.crawl","Exception:" + str(e))
+        finally:
+            self.stopCrawl()
+
+    # 从指定page开始爬取至最后一页
+    def doCrawl(self,beginPage):
+        self.currentPage = beginPage
+        #当前数据库中最老本子的上传时间
+        lastposted = self.db.getLastPosted()
         while True:
-            nxtHrefTag = s.select("#i3 > a")
-            imgTag = s.select("#img")
-            if len(nxtHrefTag) == 0 or len(imgTag) == 0:
-                print("从url获取图片失败,url:"+currentHref)
-                info("信息","excrawler.getImages","从url获取图片失败,url:"+currentHref)
+            info("info","excrawler.doCrawl","爬取第" + str(self.currentPage) + "页开始")
+            gidlist = self.getListByPage(self.currentPage)
+            #是否到达最后一页
+            if len(gidlist) == 0:
                 break
-            nxtHref = nxtHrefTag[0]['href']
-            imgUrl = imgTag[0]['src']
-            print(imgUrl)
-            print(nxtHref)
-            if nxtHref == currentHref:
-                break
-            currentHref = nxtHref
-            re = invokeRequest("获取本子图片url时","excrawler.getImages",requests.get,currentHref,cookies = COOKIE,headers = headers)
-            s = BeautifulSoup(re.text,"html.parser")
-            time.sleep(2)
-    #开始爬取
-    def startCrawl(self):
-        #缓存最新插入的100条记录，用于去重
-        ca = cache(100)
-        crawler = Crawler()
-        for index in range(3):
-            print("爬取第"+str(index)+"页开始")
-            gidlist = crawler.getListByPage(index)
-            print("获取本子列表")
-            res = crawler.getDataFromApi(gidlist)
-            print("获取本子详细信息")
+            info("info","excrawler.doCrawl","已获取本子列表")
+            res = self.getDataFromApi(gidlist)
+            info("info","excrawler.doCrawl","已获取本子详细信息")
             gmetadata = res['gmetadata']
             for data in gmetadata:
-                key = "%s-%s" % (data['gid'],data['token'])
-                if ca.containKey(key):
-                    print("delete")
-                    gmetadata.remove(data)
-                else:
-                    ca.put(key,None)
+                #去重
+                if int(data['posted']) < lastposted:
+                    lastposted = int(data['posted'])
+                    self.db.insertEromanga(data)
+                    url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                    info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
+                    self.getImages(url,data['gid'],data['token'],int(data['filecount']))
+            info("info","excrawler.doCrawl","爬取第" + str(self.currentPage) + "页结束")
+            self.currentPage += 1
 
-            connection = getConnection()
-            try:
-                insert(gmetadata,connection)
-            finally:
-                connection.close()
-            print("爬取第"+str(index)+"页结束")
-            time.sleep(3)
-
-
+        #结束爬取
+    def stopCrawl(self):
+        print(self.currentPage)
+        setConfig("app","lastpage",str(self.currentPage))
+        exit()
 
 
 if __name__ == "__main__":
     crawler = Crawler()
-    crawler.startCrawl()
-        
-
-
-
-
+    crawler.crawl()

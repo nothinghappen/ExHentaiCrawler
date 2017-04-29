@@ -17,3 +17,21 @@ create table eromanga (
     tags varchar(1000) not null,
     primary key(id)
 )ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+create table eroimage(
+	id int not null auto_increment,
+    gid int not null,
+    token varchar(20) not null,
+    sequence int not null,
+    url varchar(100) not null,
+    primary key(id)
+)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+create table thumbimage(
+    id int not null auto_increment,
+    gid int not null,
+    token varchar(20) not null,
+    sequence int not null,
+    url varchar(100) not null,
+    primary key(id)
+)ENGINE=InnoDB DEFAULT CHARSET=utf8;

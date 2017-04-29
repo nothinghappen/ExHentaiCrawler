@@ -1,7 +1,8 @@
 from excrawler import Crawler
+import re
+from database.db import db 
+from utils.log import error
+import time
+from config.configHelper import setConfig
 
-crawler = Crawler()
-
-crawler.getImages("https://exhentai.org/g/1055505/b28593e0d3/")
-
-
+setConfig("app","lastpage","19829")
