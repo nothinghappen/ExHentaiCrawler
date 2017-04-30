@@ -45,6 +45,24 @@ class db:
             cursor.execute(sql,(image['gid'],image['token'],image['sequence'],image['url']))
         self.connection.commit() 
 
+    def getLastImageSequenceByGidAndToken(self,gid,token):
+        with self.connection.cursor() as cursor:
+            sql = "select max(sequence) as lastsequence from eroimage where gid = %s and token = %s"
+            cursor.execute(sql,(gid,token))
+            res = cursor.fetchone()
+            if res['lastsequence'] == None:
+                return -1
+            return int(res['lastsequence'])
+
+    def getLastThumbImageSequenceByGidAndToken(self,gid,token):
+        with self.connection.cursor() as cursor:
+            sql = "select max(sequence) as lasttsequence from thumbimage where gid = %s and token = %s"
+            cursor.execute(sql,(gid,token))
+            res = cursor.fetchone()
+            if res['lasttsequence'] == None:
+                return -1
+            return int(res['lasttsequence'])
+
     def getLastPosted(self):
         with self.connection.cursor() as cursor:
             sql = "select min(posted) as lastposted from eromanga"
