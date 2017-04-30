@@ -5,3 +5,6 @@ class Networkerror(RuntimeError):
 class ParseError(RuntimeError):
     def __init__(self,message):
         self.message = message
+
+class BanIpError(RuntimeError):
+    pass
