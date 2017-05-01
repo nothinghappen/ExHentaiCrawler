@@ -63,6 +63,16 @@ class db:
                 return -1
             return int(res['lasttsequence'])
 
+    def getNewestPosted(self):
+        with self.connection.cursor() as cursor:
+             sql = "select max(posted) as newestposted from eromanga"
+            cursor.execute(sql)
+            res = cursor.fetchone()
+            if res['newestposted'] == None:
+                return 0
+            return int(res['newestposted'])
+
+
     def getLastPosted(self):
         with self.connection.cursor() as cursor:
             sql = "select min(posted) as lastposted from eromanga"
