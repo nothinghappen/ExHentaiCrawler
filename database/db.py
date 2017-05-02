@@ -63,9 +63,16 @@ class db:
                 return -1
             return int(res['lasttsequence'])
 
+    def getCountEromanga(self):
+        with self.connection.cursor() as cursor:
+            sql = "select count(id) as count from eromanga"
+            cursor.execute(sql)
+            res = cursor.fetchone()
+            return int(res['count'])
+
     def getNewestPosted(self):
         with self.connection.cursor() as cursor:
-             sql = "select max(posted) as newestposted from eromanga"
+            sql = "select max(posted) as newestposted from eromanga"
             cursor.execute(sql)
             res = cursor.fetchone()
             if res['newestposted'] == None:

@@ -10,6 +10,7 @@ from utils.log import error, info
 from exception.error import Networkerror,ParseError
 import re
 from config.configHelper import setConfig,getConfig,getConfigInt
+from proxy import proxypool
 
 
 def getRandomHead():
@@ -55,9 +56,32 @@ def isLastPage(html):
     else:
         return False
 
+def makeContext():
+    return {'currentPage':0,'currentPosted':int(time.time())}
+
+def makeContextFromDB():
+    db = db()
+    mangaCount = db.getCountEromanga()
+    currentPage = int(mangaCount / 25)
+    if mangaCount % 25 == 0:
+        currentPage -= 1
+    currentPosted = db.getLastPosted()
+    return {'currentPage':currentPage,'currentPosted':currentPosted}
+
 class Crawler:
 
     db = db()
+
+    pool = proxypool()
+
+    #保存当前爬取状态的上下文
+    context = {}
+
+    def __init__(self,context = None):
+        if context == None:
+            self.context = makeContext()
+        else:
+            self.context = context
 
     # 正在爬取的本子列表当前页码
     currentPage = 0
@@ -80,7 +104,7 @@ class Crawler:
                 raise ParseError("获取第" + str(page) + "页本子列表时连续5次未能从html中解析出本子列表")
 
             r = invokeRequest("获取第" + str(page) + "页本子列表", "excrawler.getListByPage",
-                            requests.get, url, cookies=COOKIE, headers=headers, timeout=30)
+                            requests.get, url, cookies=COOKIE, headers=headers,timeout=30,proxies = self.pool.getProxysequence())
             soup = BeautifulSoup(r.text, "html.parser")
 
             # 获取每个本子链接的url
@@ -112,12 +136,12 @@ class Crawler:
         }
         requestBody['gidlist'] = gidlist
         r = invokeRequest("调用api", "excrawler.getDataFromApi",
-                          requests.post, API_URL, json=requestBody, timeout=30)
+                          requests.post, API_URL, json=requestBody, timeout=30,proxies = self.pool.getProxysequence())
         self.wait()
         return json.loads(r.text)
 
     # 获取缩略图url及图片详情页url,flag标识是否是从中断处恢复
-    def getImages(self, base_url,gid, token,imageCount,flag):
+    def getImages(self, base_url,gid,token,imageCount,flag):
         headers = getRandomHead()
         pageCount = int(imageCount/40)
         if imageCount % 40 != 0:
@@ -134,7 +158,6 @@ class Crawler:
                 beginPage += 1
         for i in range(beginPage,pageCount):
             info("info","excrawler.getImages","开始爬取本子详情页第" + str(i + 1) + "页,gid:" + str(gid) + " token:" + token)
-            self.currentImagePage = i
             if i != 0:
                 url = base_url + "?p=" + str(i)
             else:
@@ -146,7 +169,7 @@ class Crawler:
                     raise ParseError("连续5次未能从本子详情页获取缩略图列表")
 
                 res = invokeRequest("获取本子详情页第" + str(i+1) + "页", "excrawler.getImages",
-                                requests.get, url, cookies=COOKIE, headers=headers,timeout=30)
+                                requests.get, url, cookies=COOKIE, headers=headers,timeout=30,proxies = self.pool.getProxysequence())
                 soup = BeautifulSoup(res.text, "html.parser")
                 tags = soup.select("#gdt > .gdtm > div")
                 if len(tags) == 0:
@@ -173,9 +196,8 @@ class Crawler:
 
     #自动从上次中断的地方恢复
     def crawl(self):
-        lastpage = getConfigInt("app","lastpage")
         try:
-            self.doCrawl(lastpage)
+            self.doCrawl()
         except Networkerror as e:
             error("异常","excrawler.crawl","Networkerror:" + e.message)
         except ParseError as e:
@@ -185,14 +207,12 @@ class Crawler:
         finally:
             self.stopCrawl()
 
-    # 从中断地方开始爬取至最后一页
-    def doCrawl(self,lastpage):
-        self.currentPage = lastpage
-        #当前数据库中最老本子的上传时间
-        lastposted = self.db.getLastPosted()
+    # 爬取至最后一页
+    def doCrawl(self):
+        lastposted = self.context['currentPosted']
         while True:
-            info("info","excrawler.doCrawl","爬取第" + str(self.currentPage) + "页开始")
-            gidlist = self.getListByPage(self.currentPage)
+            info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页开始")
+            gidlist = self.getListByPage(self.context['currentPage'])
             #是否到达最后一页
             if len(gidlist) == 0:
                 break
@@ -201,28 +221,24 @@ class Crawler:
             info("info","excrawler.doCrawl","已获取本子详细信息")
             gmetadata = res['gmetadata']
             for data in gmetadata:
+                if int(data['posted']) == lastposted:
+                    info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
+                    url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                    self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
+                    lastposted = 0
                 #去重
-                if int(data['posted']) <= lastposted:
-                    if int(data['posted']) == lastposted:
-                        info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
-                        url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                        self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
-                        continue
-                    lastposted = int(data['posted'])
+                if int(data['posted']) < self.context['currentPosted']:
                     self.db.insertEromanga(data)
+                    self.context['currentPosted'] = int(data['posted'])
                     url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
                     info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
                     self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
-            info("info","excrawler.doCrawl","爬取第" + str(self.currentPage) + "页结束")
-            self.currentPage += 1
+            info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页结束")
+            self.context['currentPage'] += 1
 
         #结束爬取
     def stopCrawl(self):
-        print(self.currentPage)
-        setConfig("app","lastpage",str(self.currentPage))
+        #保存上下文，以便下次恢复
+        setConfig("app","old_context",str(self.context))
         exit()
 
-
-if __name__ == "__main__":
-    crawler = Crawler()
-    crawler.crawl()
