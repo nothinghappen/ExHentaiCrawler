@@ -88,4 +88,10 @@ class db:
             if res['lastposted'] == None:
                 return int(time.time())
             return int(res['lastposted'])
+
+    def insertError(self,gid,token):
+         with self.connection.cursor() as cursor:
+            sql = "insert into error (gid,token) values (%s,%s)"
+            cursor.execute(sql,(gid,token))
+         self.connection.commit()
     

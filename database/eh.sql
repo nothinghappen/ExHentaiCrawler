@@ -35,3 +35,10 @@ create table thumbimage(
     url varchar(100) not null,
     primary key(id)
 )ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+create table error(
+    id int not null auto_increment,
+    gid int not null,
+    token varchar(20) not null,
+    primary key(id)
+)ENGINE=InnoDB DEFAULT CHARSET=utf8;

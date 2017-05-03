@@ -11,6 +11,8 @@ from exception.error import Networkerror,ParseError
 import re
 from config.configHelper import setConfig,getConfig,getConfigInt
 from proxy import proxypool
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait
 
 
 def getRandomHead():
@@ -166,10 +168,17 @@ class Crawler:
             errorCount = 0
             while True:
                 if errorCount >= 5:
-                    raise ParseError("连续5次未能从本子详情页获取缩略图列表")
+                    #记录出现异常的本子
+                    self.db.insertError(gid,token)
+                    error("异常","excrawler.getImages","ParseError:连续5次未能从本子详情页获取缩略图列表")
+                    #raise ParseError("连续5次未能从本子详情页获取缩略图列表")
+                try:
+                    res = invokeRequest("获取本子详情页第" + str(i+1) + "页", "excrawler.getImages",
+                                    requests.get, url, cookies=COOKIE, headers=headers,timeout=30,proxies = self.pool.getProxysequence())
+                except Networkerror as e:
+                    self.db.insertError(gid,token)
+                    error("异常","excrawler.getImages","Networkerror:" + e.message)
 
-                res = invokeRequest("获取本子详情页第" + str(i+1) + "页", "excrawler.getImages",
-                                requests.get, url, cookies=COOKIE, headers=headers,timeout=30,proxies = self.pool.getProxysequence())
                 soup = BeautifulSoup(res.text, "html.parser")
                 tags = soup.select("#gdt > .gdtm > div")
                 if len(tags) == 0:
@@ -220,19 +229,24 @@ class Crawler:
             res = self.getDataFromApi(gidlist)
             info("info","excrawler.doCrawl","已获取本子详细信息")
             gmetadata = res['gmetadata']
-            for data in gmetadata:
-                if int(data['posted']) == lastposted:
-                    info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
-                    url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                    self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
-                    lastposted = 0
-                #去重
-                if int(data['posted']) < self.context['currentPosted']:
-                    self.db.insertEromanga(data)
-                    self.context['currentPosted'] = int(data['posted'])
-                    url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                    info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
-                    self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
+            futures = []
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                for data in gmetadata:
+                    if int(data['posted']) == lastposted:
+                        info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
+                        url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                        futures.append(executor.submit(self.getImages,url,data['gid'],data['token'],int(data['filecount']),True))
+                        #self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
+                        lastposted = 0
+                    #去重
+                    if int(data['posted']) < self.context['currentPosted']:
+                        self.db.insertEromanga(data)
+                        self.context['currentPosted'] = int(data['posted'])
+                        url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                        info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
+                        futures.append(executor.submit(self.getImages,url,data['gid'],data['token'],int(data['filecount']),False))
+                        #self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
+            wait(futures)
             info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页结束")
             self.context['currentPage'] += 1
 
