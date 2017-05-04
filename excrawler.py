@@ -211,34 +211,44 @@ class Crawler:
         finally:
             self.stopCrawl()
 
+    #获取数据
+    def getMangaDataByPage(self,page):
+        info("info","excrawler.doCrawl","爬取第" + str(page) + "页开始")
+        #获取本子列表
+        gidlist = self.getListByPage(page)
+        #是否到达最后一页
+        if len(gidlist) == 0:
+            return None
+        info("info","excrawler.doCrawl","已获取本子列表")
+        res = self.getDataFromApi(gidlist)
+        info("info","excrawler.doCrawl","已获取本子详细信息")
+        gmetadata = res['gmetadata']
+        info("info","excrawler.doCrawl","爬取第" + str(page) + "页结束")
+        return gmetadata
+
     # 爬取至最后一页
     def doCrawl(self):
-        while True:
-            info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页开始")
-            gidlist = self.getListByPage(self.context['currentPage'])
-            #是否到达最后一页
-            if len(gidlist) == 0:
-                break
-            info("info","excrawler.doCrawl","已获取本子列表")
-            res = self.getDataFromApi(gidlist)
-            info("info","excrawler.doCrawl","已获取本子详细信息")
-            gmetadata = res['gmetadata']
+        flag = True
+        while flag:
             futures = []
-            for data in gmetadata:
-                #if int(data['posted']) == lastposted:
-                    #info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
-                    #url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                    #self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
-                    #lastposted = 0
-                #去重
-                if int(data['posted']) < self.context['currentPosted']:
-                    self.db.insertEromanga(data)
-                    self.context['currentPosted'] = int(data['posted'])
-                    #url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                    #info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
-                    #self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
-            info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页结束")
-            self.context['currentPage'] += 1
+            #并行发起请求5页
+            with ThreadPoolExecutor(max_workers = 5) as executor:
+                for i in range(self.context['currentPage'],self.context['currentPage'] + 5):
+                    futures.append(executor.submit(self.getMangaDataByPage,i))
+            wait(futures)
+            #串行处理数据
+            for f in futures:    
+                gmetadata = f.result()
+                #到了最后一页
+                if gmetadata == None:
+                    flag = False
+                    break
+                for data in gmetadata:
+                    #去重
+                    if int(data['posted']) < self.context['currentPosted']:
+                        self.db.insertEromanga(data)
+                        self.context['currentPosted'] = int(data['posted'])
+                self.context['currentPage'] += 1
 
     #结束爬取
     def stopCrawl(self):
