@@ -127,7 +127,6 @@ class Crawler:
                 dic = getIdAndTokenFromURL(href)
                 gidlist.append([int(dic['gallery_id']), dic['gallery_token']])
             break
-        self.wait()
         return gidlist
 
     def getDataFromApi(self, gidlist):
@@ -139,7 +138,6 @@ class Crawler:
         requestBody['gidlist'] = gidlist
         r = invokeRequest("调用api", "excrawler.getDataFromApi",
                           requests.post, API_URL, json=requestBody, timeout=30,proxies = self.pool.getProxysequence())
-        self.wait()
         return json.loads(r.text)
 
     # 获取缩略图url及图片详情页url,flag标识是否是从中断处恢复
@@ -199,11 +197,8 @@ class Crawler:
                         tsequence += 1
                         imageUrls.append(timageUrl)
                 self.db.insertEroimage(images)
-                break
-            self.wait()
-            
+                break            
 
-    #自动从上次中断的地方恢复
     def crawl(self):
         try:
             self.doCrawl()
@@ -218,7 +213,6 @@ class Crawler:
 
     # 爬取至最后一页
     def doCrawl(self):
-        lastposted = self.context['currentPosted']
         while True:
             info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页开始")
             gidlist = self.getListByPage(self.context['currentPage'])
@@ -230,27 +224,23 @@ class Crawler:
             info("info","excrawler.doCrawl","已获取本子详细信息")
             gmetadata = res['gmetadata']
             futures = []
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                for data in gmetadata:
-                    if int(data['posted']) == lastposted:
-                        info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
-                        url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                        futures.append(executor.submit(self.getImages,url,data['gid'],data['token'],int(data['filecount']),True))
-                        #self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
-                        lastposted = 0
-                    #去重
-                    if int(data['posted']) < self.context['currentPosted']:
-                        self.db.insertEromanga(data)
-                        self.context['currentPosted'] = int(data['posted'])
-                        url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
-                        info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
-                        futures.append(executor.submit(self.getImages,url,data['gid'],data['token'],int(data['filecount']),False))
-                        #self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
-            wait(futures)
+            for data in gmetadata:
+                #if int(data['posted']) == lastposted:
+                    #info("info","excrawler.doCrawl","从gid:" + str(data['gid']) + "开始恢复")
+                    #url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                    #self.getImages(url,data['gid'],data['token'],int(data['filecount']),True)
+                    #lastposted = 0
+                #去重
+                if int(data['posted']) < self.context['currentPosted']:
+                    self.db.insertEromanga(data)
+                    self.context['currentPosted'] = int(data['posted'])
+                    #url = "https://exhentai.org/g/"+str(data['gid']) + "/" + str(data['token']) + "/"
+                    #info("info","excrawler.doCrawl","开始爬取缩略图url及图片详情页url")
+                    #self.getImages(url,data['gid'],data['token'],int(data['filecount']),False)
             info("info","excrawler.doCrawl","爬取第" + str(self.context['currentPage']) + "页结束")
             self.context['currentPage'] += 1
 
-        #结束爬取
+    #结束爬取
     def stopCrawl(self):
         #保存上下文，以便下次恢复
         setConfig("app","old_context",str(self.context))
