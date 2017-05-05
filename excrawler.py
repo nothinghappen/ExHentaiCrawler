@@ -35,10 +35,10 @@ def getIdAndTokenFromURL(url):
 # 封装请求重试与异常处理，记录日志的代码
 def invokeRequest(log, location, func, *args, **kwargs):
     errorCount = 0
-    # 发生异常时最多重试5次
+    # 发生异常时最多重试10次
     while True:
-        if errorCount >= 5:
-            raise Networkerror(log + "时重试5次失败")
+        if errorCount >= 10:
+            raise Networkerror(log + "时重试10次失败")
         try:
             return func(*args, **kwargs)
         except requests.exceptions.Timeout:
@@ -59,7 +59,7 @@ def isLastPage(html):
         return False
 
 def makeContext():
-    return {'currentPage':0,'currentPosted':int(time.time())}
+    return {'currentPage':0,'currentPosted':int(time.time()),'newestPosted':0}
 
 def makeContextFromDB():
     db = db()
@@ -69,6 +69,9 @@ def makeContextFromDB():
         currentPage -= 1
     currentPosted = db.getLastPosted()
     return {'currentPage':currentPage,'currentPosted':currentPosted}
+
+def isUseProxy():
+    return getConfig("app","proxyEnable") == "true"
 
 class Crawler:
 
@@ -82,6 +85,7 @@ class Crawler:
     def __init__(self,context = None):
         if context == None:
             self.context = makeContext()
+            self.context['newestPosted'] = self.db.getNewestPosted()
         else:
             self.context = context
 
@@ -105,8 +109,12 @@ class Crawler:
             if errorCount >= 5:
                 raise ParseError("获取第" + str(page) + "页本子列表时连续5次未能从html中解析出本子列表")
 
-            r = invokeRequest("获取第" + str(page) + "页本子列表", "excrawler.getListByPage",
+            if isUseProxy():
+                r = invokeRequest("获取第" + str(page) + "页本子列表", "excrawler.getListByPage",
                             requests.get, url, cookies=COOKIE, headers=headers,timeout=30,proxies = self.pool.getProxysequence())
+            else:
+                r = invokeRequest("获取第" + str(page) + "页本子列表", "excrawler.getListByPage",
+                            requests.get, url, cookies=COOKIE, headers=headers,timeout=30)
             soup = BeautifulSoup(r.text, "html.parser")
 
             # 获取每个本子链接的url
@@ -136,8 +144,12 @@ class Crawler:
             'namespace': 1
         }
         requestBody['gidlist'] = gidlist
-        r = invokeRequest("调用api", "excrawler.getDataFromApi",
+        if isUseProxy():
+            r = invokeRequest("调用api", "excrawler.getDataFromApi",
                           requests.post, API_URL, json=requestBody, timeout=30,proxies = self.pool.getProxysequence())
+        else:
+            r = invokeRequest("调用api", "excrawler.getDataFromApi",
+                          requests.post, API_URL, json=requestBody, timeout=30)            
         return json.loads(r.text)
 
     # 获取缩略图url及图片详情页url,flag标识是否是从中断处恢复
@@ -209,7 +221,21 @@ class Crawler:
         except Exception as e:
             error("异常","excrawler.crawl","Exception:" + str(e))
         finally:
-            self.stopCrawl()
+            setConfig("app","old_context",str(self.context))
+
+    def crawlNewest(self):
+        try:
+            self.doCrawlNewest()
+        except Networkerror as e:
+            error("异常","excrawler.crawl","Networkerror:" + e.message)
+            setConfig("app","new_context",str(self.context))
+        except ParseError as e:
+            error("异常","excrawler.crawl","ParseError:" + e.message)
+            setConfig("app","new_context",str(self.context))
+        except Exception as e:
+            error("异常","excrawler.crawl","Exception:" + str(e))
+            setConfig("app","new_context",str(self.context))
+         
 
     #获取数据
     def getMangaDataByPage(self,page):
@@ -250,9 +276,28 @@ class Crawler:
                         self.context['currentPosted'] = int(data['posted'])
                 self.context['currentPage'] += 1
 
-    #结束爬取
-    def stopCrawl(self):
-        #保存上下文，以便下次恢复
-        setConfig("app","old_context",str(self.context))
-        exit()
+    def doCrawlNewest(self):
+        flag = True
+        while flag:
+            futures = []
+            #并行发起请求5页
+            with ThreadPoolExecutor(max_workers = 5) as executor:
+                for i in range(self.context['currentPage'],self.context['currentPage'] + 5):
+                    futures.append(executor.submit(self.getMangaDataByPage,i))
+            wait(futures)
+            #串行处理数据
+            for f in futures:    
+                gmetadata = f.result()
+                for data in gmetadata:
+                    #最新本子爬取完毕
+                    if int(data['posted']) <= self.context['newestPosted']:
+                        info("info","excrawler.crawlNewest","爬取到上次爬取的最新本子 posted:" + data['posted'])
+                        setConfig("app","new_context","")
+                        flag = False
+                        exit()
+                    #去重
+                    if int(data['posted']) < self.context['currentPosted']:
+                        self.db.insertEromanga(data)
+                        self.context['currentPosted'] = int(data['posted'])
+                self.context['currentPage'] += 1
 
