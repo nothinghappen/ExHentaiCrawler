@@ -26,17 +26,14 @@ def getRandomHead():
     return headers
 
 # 从url字符串中解析出gallery_id与gallery_token
-
-
 def getIdAndTokenFromURL(url):
     begin = len("https://exhentai.org/g/")
     end = len(url)
     param = url[begin:end].split('/')
     return ({'gallery_id': param[0], 'gallery_token': param[1]})
 
+
 # 封装请求重试与异常处理，记录日志的代码
-
-
 def invokeRequest(log, location, func, *args, **kwargs):
     errorCount = 0
     # 发生异常时最多重试10次
