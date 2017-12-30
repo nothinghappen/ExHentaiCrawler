@@ -7,13 +7,7 @@ class DummyLogger:
     def __init__(self, subLogger):
         pass
 
-    def info(self, title, location, message):
-        pass
-
-    def debug(self, title, location, message):
-        pass
-
-    def error(self, title, location, message):
+    def log(self, title, level, location, message):
         pass
 
 class ConsoleLogger:
@@ -31,15 +25,6 @@ class ConsoleLogger:
             self.subLogger.log(title, level, location, message)
 
         self.doLog(title, level, location, message)
-
-    def info(self, title, location, message):
-        self.log(title, "info", location, message)
-
-    def debug(self, title, location, message):
-        self.log(title, "debug", location, message)
-
-    def error(self, title, location, message):
-        self.log(title, "error", location, message)
 
 class ServerLogger:
     subLogger = None
@@ -64,20 +49,26 @@ class ServerLogger:
             print("log fail")
 
     def log(self, title, level, location, message):
-        if (self.subLogger is not None):
+        if self.subLogger is not None:
             self.subLogger.log(title, level, location, message)
 
         self.doLog(title, level, location, message)
 
+class LogManager:
+
+    logger = None
+
+    def __init__(self,logger):
+        self.logger = logger
+
     def info(self, title, location, message):
-        self.log(title, "info", location, message)
+        self.logger.log(title, "info", location, message)
 
     def debug(self, title, location, message):
-        self.log(title, "debug", location, message)
+        self.logger.log(title, "debug", location, message)
 
     def error(self, title, location, message):
-        self.log(title, "error", location, message)
-
+        self.logger.log(title, "error", location, message)
 
 
 def getLogger(config = None):
@@ -90,9 +81,11 @@ def getLogger(config = None):
     toserver = getConfigBool("log", "toserver")
 
     logger = None
+    
+    logger = DummyLogger(logger)
 
     if not enable:
-        return DummyLogger(logger)
+        return logger
 
     if toconsole:
         logger = ConsoleLogger(logger)
@@ -100,4 +93,6 @@ def getLogger(config = None):
     if toserver:
         logger = ServerLogger(logger)
 
-    return logger
+    logManager = LogManager(logger)
+
+    return logManager

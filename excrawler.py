@@ -148,12 +148,7 @@ class Crawler:
         return gidlist
 
     def getDataFromApi(self, gidlist):
-        requestBody = {
-            'method': 'gdata',
-            'gidlist': [],
-            'namespace': 1
-        }
-        requestBody['gidlist'] = gidlist
+        requestBody = {'method': 'gdata', 'gidlist': gidlist, 'namespace': 1}
         if isUseProxy():
             r = invokeRequest("调用api", "excrawler.getDataFromApi",
                               requests.post, API_URL, json=requestBody, timeout=30, proxies=self.pool.getProxysequence())

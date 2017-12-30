@@ -107,12 +107,7 @@ class Excrawler:
         return gidlist
 
     def getDataFromApi(self, gidlist):
-        requestBody = {
-            'method': 'gdata',
-            'gidlist': [],
-            'namespace': 1
-        }
-        requestBody['gidlist'] = gidlist
+        requestBody = {'method': 'gdata', 'gidlist': gidlist, 'namespace': 1}
 
         log = "调用api"
         location = "excrawler.getDataFromApi"
